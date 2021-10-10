@@ -1,0 +1,164 @@
+version: '2'
+#注意，正式使用記得修改相關參數
+services:
+  mariadb-galera-1:
+    image: 'docker.io/bitnami/mariadb-galera:10.5-debian-10'
+    mem_limit: 512m
+    mem_reservation: 256M
+    cpus: 0.5
+    ports:
+      - '3301:3306'
+      - '4444'
+      - '4567'
+      - '4568'
+    volumes:
+      - 'galera_storage_1:/bitnami/mariadb'
+    networks:
+      - galera-cluster
+    environment:
+      # ALLOW_EMPTY_PASSWORD 僅開發測試使用
+      - ALLOW_EMPTY_PASSWORD=yes
+      - MARIADB_ROOT_USER=root
+      - MARIADB_ROOT_PASSWORD=
+      - MARIADB_GALERA_NODE_NAME=node_1
+      - MARIADB_GALERA_CLUSTER_NAME=my_galera
+      - MARIADB_GALERA_MARIABACKUP_USER=my_mariabackup_user
+      - MARIADB_GALERA_MARIABACKUP_PASSWORD=my_mariabackup_password
+      - MARIADB_DATABASE=wo_payments
+      - MARIADB_REPLICATION_USER=my_replication_user
+      - MARIADB_REPLICATION_PASSWORD=my_replication_password
+      - MARIADB_GALERA_CLUSTER_ADDRESS=gcomm:// #mariadb-galera-3,mariadb-galera-2
+      - MARIADB_GALERA_CLUSTER_BOOTSTRAP=yes
+      - MARIADB_GALERA_FORCE_SAFETOBOOTSTRAP=yes
+    healthcheck:
+      test: ['CMD', '/opt/bitnami/scripts/mariadb-galera/healthcheck.sh']
+      interval: 15s
+      timeout: 5s
+      retries: 6
+
+  mariadb-galera-2:
+    image: 'docker.io/bitnami/mariadb-galera:10.5-debian-10'
+    mem_limit: 512m
+    mem_reservation: 256M
+    cpus: 0.5
+    ports:
+      - '3302:3306'
+      - '4444'
+      - '4567'
+      - '4568'
+    volumes:
+      - 'galera_storage_2:/bitnami/mariadb'
+    networks:
+      - galera-cluster
+    environment:
+      # ALLOW_EMPTY_PASSWORD 僅開發測試使用
+      - ALLOW_EMPTY_PASSWORD=yes
+      - MARIADB_ROOT_USER=root
+      - MARIADB_ROOT_PASSWORD=
+      - MARIADB_GALERA_NODE_NAME=node_2
+      - MARIADB_GALERA_CLUSTER_NAME=my_galera
+      - MARIADB_GALERA_MARIABACKUP_USER=my_mariabackup_user
+      - MARIADB_GALERA_MARIABACKUP_PASSWORD=my_mariabackup_password
+      - MARIADB_DATABASE=wo_payments
+      - MARIADB_REPLICATION_USER=my_replication_user
+      - MARIADB_REPLICATION_PASSWORD=my_replication_password
+      - MARIADB_GALERA_CLUSTER_ADDRESS=gcomm://mariadb-galera-1
+    healthcheck:
+      test: ['CMD', '/opt/bitnami/scripts/mariadb-galera/healthcheck.sh']
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      - mariadb-galera-1
+
+  mariadb-galera-3:
+    image: 'docker.io/bitnami/mariadb-galera:10.5-debian-10'
+    mem_limit: 512m
+    mem_reservation: 256M
+    cpus: 0.5
+    ports:
+      - '3303:3306'
+      - '4444'
+      - '4567'
+      - '4568'
+    volumes:
+      - 'galera_storage_3:/bitnami/mariadb'
+    networks:
+      - galera-cluster
+    environment:
+      # ALLOW_EMPTY_PASSWORD 僅開發測試使用
+      - ALLOW_EMPTY_PASSWORD=yes
+      - MARIADB_ROOT_USER=root
+      - MARIADB_ROOT_PASSWORD=
+      - MARIADB_GALERA_NODE_NAME=node_3
+      - MARIADB_GALERA_CLUSTER_NAME=my_galera
+      - MARIADB_GALERA_MARIABACKUP_USER=my_mariabackup_user
+      - MARIADB_GALERA_MARIABACKUP_PASSWORD=my_mariabackup_password
+      - MARIADB_DATABASE=wo_payments
+      - MARIADB_REPLICATION_USER=my_replication_user
+      - MARIADB_REPLICATION_PASSWORD=my_replication_password
+      - MARIADB_GALERA_CLUSTER_ADDRESS=gcomm://mariadb-galera-1
+    healthcheck:
+      test: ['CMD', '/opt/bitnami/scripts/mariadb-galera/healthcheck.sh']
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      - mariadb-galera-2
+
+  haproxy:
+    image: 'docker.io/haproxy:2.4'
+    mem_limit: 512m
+    mem_reservation: 128M
+    cpus: 0.5
+    ports:
+      - '8070:8070'
+      - '3306:3306'
+    environment: #為haproxy設定檔之對應參數
+      - DB1_ADDRESS=mariadb-galera-1
+      - DB2_ADDRESS=mariadb-galera-2
+      - DB3_ADDRESS=mariadb-galera-3
+      - DB1_PORT=3306
+      - DB2_PORT=3306
+      - DB3_PORT=3306
+    networks:
+      - galera-cluster
+    volumes:
+      - ./:/usr/local/etc/haproxy
+    depends_on:
+      - mariadb-galera-1
+      - mariadb-galera-2
+      - mariadb-galera-3
+
+  phpmyadmin:
+    image: 'phpmyadmin/phpmyadmin'
+    mem_limit: 512m
+    mem_reservation: 128M
+    cpus: 0.5
+    ports:
+      - '8888:80'
+    environment:
+     #- PMA_ARBITRARY=1
+      - PMA_HOST=haproxy
+      - PMA_PORTS=3306
+    networks:
+      - galera-cluster
+    depends_on:
+      - haproxy
+    links:
+      - haproxy
+
+volumes:
+  galera_storage_1:
+    driver: local
+  galera_storage_2:
+    driver: local
+  galera_storage_3:
+    driver: local
+
+networks:
+  galera-cluster:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.16.70.0/24
